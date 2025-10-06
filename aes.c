@@ -96,11 +96,30 @@ byte x3(byte x) {
     return x2(x) ^ x;
 }
 
+byte xtime(byte x) {
+    return (x << 1) ^ ((x & 0x80) ? 0x1B : 0x00);
+}
+
+byte mul_gf(byte a, byte b) {
+    byte res = 0x00;
+    while (b)
+    {
+        if(b&0x01) {
+            res ^= a;
+        }
+
+        a = xtime(a);
+        b = b >> 1;
+    }
+    
+    return res;
+}
+
 void mix_col(byte* a0, byte* a1, byte* a2, byte* a3) {
-    byte b0 = x2(*a0) ^ x3(*a1) ^ *a2 ^ *a3; 
-    byte b1 = *a0 ^ x2(*a1) ^ x3(*a2) ^ *a3; 
-    byte b2 = *a0 ^ *a1 ^ x2(*a2) ^ x3(*a3);
-    byte b3 = x3(*a0) ^ *a1 ^ *a2 ^ x2(*a3); 
+    byte b0 = mul_gf(*a0, 0x02) ^ mul_gf(*a1, 0x03) ^ *a2 ^ *a3; 
+    byte b1 = *a0 ^ mul_gf(*a1, 0x02) ^ mul_gf(*a2, 0x03) ^ *a3; 
+    byte b2 = *a0 ^ *a1 ^ mul_gf(*a2, 0x02) ^ mul_gf(*a3, 0x03);
+    byte b3 = mul_gf(*a0, 0x03) ^ *a1 ^ *a2 ^ mul_gf(*a3, 0x02); 
 
     *a0 = b0; *a1 = b1; *a2 = b2; *a3 = b3;
 }
@@ -115,21 +134,21 @@ void mix_cols(word32 state[4]) {
 void add_roundkey(word32 state[4], word32 keyExpand[44], int r) {
     word32 wk3 = ((keyExpand[r*4 + 0] & 0x000000FF) << 24) | 
                  ((keyExpand[r*4 + 1] & 0x000000FF) << 16) | 
-                 ((keyExpand[r*4 + 2] & 0x000000FF) << 8) | 
-                 ((keyExpand[r*4 + 3] & 0x000000FF) << 0) ;
+                 ((keyExpand[r*4 + 2] & 0x000000FF) <<  8) | 
+                 ((keyExpand[r*4 + 3] & 0x000000FF) <<  0) ;
     
     word32 wk2 = ((keyExpand[r*4 + 0] & 0x0000FF00) << 16) | 
-                 ((keyExpand[r*4 + 1] & 0x0000FF00) << 8) | 
-                 ((keyExpand[r*4 + 2] & 0x0000FF00) << 0) | 
-                 ((keyExpand[r*4 + 3] & 0x0000FF00) >> 8) ;
+                 ((keyExpand[r*4 + 1] & 0x0000FF00) <<  8) | 
+                 ((keyExpand[r*4 + 2] & 0x0000FF00) <<  0) | 
+                 ((keyExpand[r*4 + 3] & 0x0000FF00) >>  8) ;
 
-    word32 wk1 = ((keyExpand[r*4 + 0] & 0x00FF0000) << 8) | 
-                 ((keyExpand[r*4 + 1] & 0x00FF0000) << 0) | 
-                 ((keyExpand[r*4 + 2] & 0x00FF0000) >> 8) | 
+    word32 wk1 = ((keyExpand[r*4 + 0] & 0x00FF0000) <<  8) | 
+                 ((keyExpand[r*4 + 1] & 0x00FF0000) <<  0) | 
+                 ((keyExpand[r*4 + 2] & 0x00FF0000) >>  8) | 
                  ((keyExpand[r*4 + 3] & 0x00FF0000) >> 16) ;
 
-    word32 wk0 = ((keyExpand[r*4 + 0] & 0xFF000000) << 0) | 
-                 ((keyExpand[r*4 + 1] & 0xFF000000) >> 8) | 
+    word32 wk0 = ((keyExpand[r*4 + 0] & 0xFF000000) <<  0) | 
+                 ((keyExpand[r*4 + 1] & 0xFF000000) >>  8) | 
                  ((keyExpand[r*4 + 2] & 0xFF000000) >> 16) | 
                  ((keyExpand[r*4 + 3] & 0xFF000000) >> 24) ;
 
@@ -162,28 +181,28 @@ void aes_128_enc(byte key[16], byte inp[16], byte out[16])
     add_roundkey(state, keyExpand, 10);
 
     word32 w = 0; 
-    w = ((state[3] & 0xFF000000) >> 0) |
-        ((state[2] & 0xFF000000) >> 8) |
+    w = ((state[3] & 0xFF000000) >>  0) |
+        ((state[2] & 0xFF000000) >>  8) |
         ((state[1] & 0xFF000000) >> 16) |
         ((state[0] & 0xFF000000) >> 24);
     memcpy(out, &w, 4); out += 4;
 
-    w = ((state[3] & 0x00FF0000) << 8) |
-        ((state[2] & 0x00FF0000) >> 0) |
-        ((state[1] & 0x00FF0000) >> 8) |
+    w = ((state[3] & 0x00FF0000) <<  8) |
+        ((state[2] & 0x00FF0000) >>  0) |
+        ((state[1] & 0x00FF0000) >>  8) |
         ((state[0] & 0x00FF0000) >> 16);
     memcpy(out, &w, 4); out += 4;
 
     w = ((state[3] & 0x0000FF00) << 16) |
-        ((state[2] & 0x0000FF00) << 8) |
-        ((state[1] & 0x0000FF00) >> 0) |
-        ((state[0] & 0x0000FF00) >> 8);
+        ((state[2] & 0x0000FF00) <<  8) |
+        ((state[1] & 0x0000FF00) >>  0) |
+        ((state[0] & 0x0000FF00) >>  8);
     memcpy(out, &w, 4); out += 4;
 
     w = ((state[3] & 0x000000FF) << 24) |
         ((state[2] & 0x000000FF) << 16) |
-        ((state[1] & 0x000000FF) << 9) |
-        ((state[0] & 0x000000FF) << 0);
+        ((state[1] & 0x000000FF) <<  8) |
+        ((state[0] & 0x000000FF) <<  0);
     memcpy(out, &w, 4);
 }
 
@@ -191,39 +210,20 @@ int main(int argc, char const *argv[])
 {
     byte key[] = {0x2b ,0x7e ,0x15 ,0x16 ,0x28 ,0xae ,0xd2 ,0xa6 ,0xab ,0xf7 ,0x15 ,0x88 ,0x09 ,0xcf ,0x4f ,0x3c};
     byte inp[] = {0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34};
+    byte exp[] = {0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32};
     byte out[16];
 
     aes_128_enc(key, inp, out);
-    print_bytes(out, 16);
 
-    // word32 keyExpand[44];
-    // key_expansion(key, keyExpand, 4, 10);
+    if(memcmp(out, exp, 16) != 0) {
+        printf("compare falied\n");
+        print_bytes(out, 16);
+        print_bytes(exp, 16);
+    }
+    else {
+        printf("[AES][128] test pass\n");
+    }
 
-    // word32 state[4];
-    // init_state(state, inp);
-    // print_words(state, 4);
-
-    // add_roundkey(state, keyExpand, 0);
-    // print_words(state, 4);
-
-    // sub_bytes(state);
-    // print_words(state, 4);
-
-    // shift_rows(state);
-    // print_words(state, 4);
-
-    // mix_cols(state);
-    // print_words(state, 4);
-    
-
-    // print_words(keyExpand, 44);
-
-    // byte a = 0x53;
-    // print_hex(subbyte(a));
-
-    // print_hex(subword(0xcf4f3c09));
-
-    // print_hex(rotword(0x09cf4f3c));
 
     return 0;
 }
