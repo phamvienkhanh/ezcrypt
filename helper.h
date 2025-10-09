@@ -37,6 +37,27 @@ static void print_words(word32* data, int len) {
     printf("\n");
 }
 
+static void print_state4(word32 state[4]) {
+    for(int i = 0; i < 4; i++) {
+        printf("%08x\n", state[i]);
+    }
+    printf("\n");
+}
+
+static void print_progress(double progress) {
+    int barWidth = 50;
+    int pos = (int)(barWidth * progress);
+
+    printf("[");
+    for (int i = 0; i < barWidth; ++i) {
+        if (i < pos) printf("=");
+        else if (i == pos) printf(">");
+        else printf(" ");
+    }
+    printf("] %3.0f%%\r", progress * 100.0);
+    fflush(stdout);
+}
+
 #define ROL32(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
 

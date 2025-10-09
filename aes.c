@@ -1,4 +1,8 @@
 #include "helper.h"
+#include <time.h>
+
+#include <openssl/aes.h>
+#include <openssl/crypto.h>
 
 const byte sbox[] ={
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -19,6 +23,25 @@ const byte sbox[] ={
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16 
 };
 
+const byte invsbox[] = {
+    0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
+    0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
+    0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e,
+    0x08, 0x2e, 0xa1, 0x66, 0x28, 0xd9, 0x24, 0xb2, 0x76, 0x5b, 0xa2, 0x49, 0x6d, 0x8b, 0xd1, 0x25,
+    0x72, 0xf8, 0xf6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xd4, 0xa4, 0x5c, 0xcc, 0x5d, 0x65, 0xb6, 0x92,
+    0x6c, 0x70, 0x48, 0x50, 0xfd, 0xed, 0xb9, 0xda, 0x5e, 0x15, 0x46, 0x57, 0xa7, 0x8d, 0x9d, 0x84,
+    0x90, 0xd8, 0xab, 0x00, 0x8c, 0xbc, 0xd3, 0x0a, 0xf7, 0xe4, 0x58, 0x05, 0xb8, 0xb3, 0x45, 0x06,
+    0xd0, 0x2c, 0x1e, 0x8f, 0xca, 0x3f, 0x0f, 0x02, 0xc1, 0xaf, 0xbd, 0x03, 0x01, 0x13, 0x8a, 0x6b,
+    0x3a, 0x91, 0x11, 0x41, 0x4f, 0x67, 0xdc, 0xea, 0x97, 0xf2, 0xcf, 0xce, 0xf0, 0xb4, 0xe6, 0x73,
+    0x96, 0xac, 0x74, 0x22, 0xe7, 0xad, 0x35, 0x85, 0xe2, 0xf9, 0x37, 0xe8, 0x1c, 0x75, 0xdf, 0x6e,
+    0x47, 0xf1, 0x1a, 0x71, 0x1d, 0x29, 0xc5, 0x89, 0x6f, 0xb7, 0x62, 0x0e, 0xaa, 0x18, 0xbe, 0x1b,
+    0xfc, 0x56, 0x3e, 0x4b, 0xc6, 0xd2, 0x79, 0x20, 0x9a, 0xdb, 0xc0, 0xfe, 0x78, 0xcd, 0x5a, 0xf4,
+    0x1f, 0xdd, 0xa8, 0x33, 0x88, 0x07, 0xc7, 0x31, 0xb1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xec, 0x5f,
+    0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef,
+    0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61,
+    0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
+};
+
 const word32 rcon[] = {
     0x01000000, 0x02000000, 0x04000000, 0x08000000, 
     0x10000000, 0x20000000, 0x40000000, 0x80000000, 
@@ -33,6 +56,13 @@ byte subbyte(byte b) {
     return sbox[r*16 + c];
 }
 
+byte invsubbyte(byte b) {
+    int r = (b & 0xF0) >> 4;
+    int c = b & 0x0F;
+
+    return invsbox[r*16 + c];
+}
+
 word32 subword(word32 word) {
     return (subbyte(word >> 24) << 24) 
         | (subbyte((word & 0x00FF0000) >> 16) << 16)
@@ -40,8 +70,19 @@ word32 subword(word32 word) {
         | (subbyte(word & 0x000000FF)); 
 }
 
+word32 invsubword(word32 word) {
+    return (invsubbyte(word >> 24) << 24) 
+        | (invsubbyte((word & 0x00FF0000) >> 16) << 16)
+        | (invsubbyte((word & 0x0000FF00) >> 8) << 8)
+        | (invsubbyte(word & 0x000000FF)); 
+}
+
 word32 rotword(word32 word, int n) {
     return (word << 8*n) | (word >> (32 - 8*n));
+}
+
+word32 invrotword(word32 word, int n) {
+    return (word >> 8*n) | (word << (32 - 8*n));
 }
 
 void key_expansion(byte key[16], word32 words[44], int nk, int nr)
@@ -82,18 +123,23 @@ void sub_bytes(word32 state[4]) {
     state[3] = subword(state[3]);
 }
 
+void inv_sub_bytes(word32 state[4]) {
+    state[0] = invsubword(state[0]);
+    state[1] = invsubword(state[1]);
+    state[2] = invsubword(state[2]);
+    state[3] = invsubword(state[3]);
+}
+
 void shift_rows(word32 state[4]) {
     state[1] = rotword(state[1], 1);
     state[2] = rotword(state[2], 2);
     state[3] = rotword(state[3], 3);
 }
 
-byte x2(byte x) {
-    return (x << 1) ^ ((x & 0x80) ? 0x1B : 0x00);
-}
-
-byte x3(byte x) {
-    return x2(x) ^ x;
+void inv_shift_rows(word32 state[4]) {
+    state[1] = invrotword(state[1], 1);
+    state[2] = invrotword(state[2], 2);
+    state[3] = invrotword(state[3], 3);
 }
 
 byte xtime(byte x) {
@@ -115,7 +161,7 @@ byte mul_gf(byte a, byte b) {
     return res;
 }
 
-void mix_col(byte* a0, byte* a1, byte* a2, byte* a3) {
+void mixcol(byte* a0, byte* a1, byte* a2, byte* a3) {
     byte b0 = mul_gf(*a0, 0x02) ^ mul_gf(*a1, 0x03) ^ *a2 ^ *a3; 
     byte b1 = *a0 ^ mul_gf(*a1, 0x02) ^ mul_gf(*a2, 0x03) ^ *a3; 
     byte b2 = *a0 ^ *a1 ^ mul_gf(*a2, 0x02) ^ mul_gf(*a3, 0x03);
@@ -124,11 +170,27 @@ void mix_col(byte* a0, byte* a1, byte* a2, byte* a3) {
     *a0 = b0; *a1 = b1; *a2 = b2; *a3 = b3;
 }
 
+void invmixcol(byte* a0, byte* a1, byte* a2, byte* a3) {
+    byte b0 = mul_gf(*a0, 0x0E) ^ mul_gf(*a1, 0x0B) ^ mul_gf(*a2, 0x0D) ^ mul_gf(*a3, 0x09); 
+    byte b1 = mul_gf(*a0, 0x09) ^ mul_gf(*a1, 0x0E) ^ mul_gf(*a2, 0x0B) ^ mul_gf(*a3, 0x0D); 
+    byte b2 = mul_gf(*a0, 0x0D) ^ mul_gf(*a1, 0x09) ^ mul_gf(*a2, 0x0E) ^ mul_gf(*a3, 0x0B);
+    byte b3 = mul_gf(*a0, 0x0B) ^ mul_gf(*a1, 0x0D) ^ mul_gf(*a2, 0x09) ^ mul_gf(*a3, 0x0E); 
+
+    *a0 = b0; *a1 = b1; *a2 = b2; *a3 = b3;
+}
+
 void mix_cols(word32 state[4]) {
-    mix_col((byte*)state + 0, (byte*)state + 4, (byte*)state + 8,  (byte*)state + 12);
-    mix_col((byte*)state + 1, (byte*)state + 5, (byte*)state + 9,  (byte*)state + 13);
-    mix_col((byte*)state + 2, (byte*)state + 6, (byte*)state + 10, (byte*)state + 14);
-    mix_col((byte*)state + 3, (byte*)state + 7, (byte*)state + 11, (byte*)state + 15);
+    mixcol((byte*)state + 0, (byte*)state + 4, (byte*)state + 8,  (byte*)state + 12);
+    mixcol((byte*)state + 1, (byte*)state + 5, (byte*)state + 9,  (byte*)state + 13);
+    mixcol((byte*)state + 2, (byte*)state + 6, (byte*)state + 10, (byte*)state + 14);
+    mixcol((byte*)state + 3, (byte*)state + 7, (byte*)state + 11, (byte*)state + 15);
+}
+
+void inv_mix_cols(word32 state[4]) {
+    invmixcol((byte*)state + 0, (byte*)state + 4, (byte*)state + 8,  (byte*)state + 12);
+    invmixcol((byte*)state + 1, (byte*)state + 5, (byte*)state + 9,  (byte*)state + 13);
+    invmixcol((byte*)state + 2, (byte*)state + 6, (byte*)state + 10, (byte*)state + 14);
+    invmixcol((byte*)state + 3, (byte*)state + 7, (byte*)state + 11, (byte*)state + 15);
 }
 
 void add_roundkey(word32 state[4], word32 keyExpand[44], int r) {
@@ -206,24 +268,138 @@ void aes_128_enc(byte key[16], byte inp[16], byte out[16])
     memcpy(out, &w, 4);
 }
 
+void aes_128_dec(byte key[16], byte inp[16], byte out[16])
+{
+    word32 keyExpand[44];
+    key_expansion(key, keyExpand, 4, 10);
+
+    word32 state[4];
+    init_state(state, inp);
+
+    add_roundkey(state, keyExpand, 10);
+
+    for (int i = 9; i > 0; i--)
+    {
+        inv_shift_rows(state);
+        inv_sub_bytes(state);
+        add_roundkey(state, keyExpand, i);
+        inv_mix_cols(state);
+    }
+    
+    inv_shift_rows(state);
+    inv_sub_bytes(state);
+    add_roundkey(state, keyExpand, 0);
+
+    word32 w = 0; 
+    w = ((state[3] & 0xFF000000) >>  0) |
+        ((state[2] & 0xFF000000) >>  8) |
+        ((state[1] & 0xFF000000) >> 16) |
+        ((state[0] & 0xFF000000) >> 24);
+    memcpy(out, &w, 4); out += 4;
+
+    w = ((state[3] & 0x00FF0000) <<  8) |
+        ((state[2] & 0x00FF0000) >>  0) |
+        ((state[1] & 0x00FF0000) >>  8) |
+        ((state[0] & 0x00FF0000) >> 16);
+    memcpy(out, &w, 4); out += 4;
+
+    w = ((state[3] & 0x0000FF00) << 16) |
+        ((state[2] & 0x0000FF00) <<  8) |
+        ((state[1] & 0x0000FF00) >>  0) |
+        ((state[0] & 0x0000FF00) >>  8);
+    memcpy(out, &w, 4); out += 4;
+
+    w = ((state[3] & 0x000000FF) << 24) |
+        ((state[2] & 0x000000FF) << 16) |
+        ((state[1] & 0x000000FF) <<  8) |
+        ((state[0] & 0x000000FF) <<  0);
+    memcpy(out, &w, 4);
+}
+
+void benmark() {
+    byte key[] = {0x2b ,0x7e ,0x15 ,0x16 ,0x28 ,0xae ,0xd2 ,0xa6 ,0xab ,0xf7 ,0x15 ,0x88 ,0x09 ,0xcf ,0x4f ,0x3c};
+    byte plain[] = {0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34};
+    byte out[16];
+
+    int tt = 1000*1000*100;
+    clock_t start = clock();
+    for(int i = 0; i < 1000*1000*100; i++) {
+        aes_128_enc(key, out, out);
+
+        if(i % 1000*1000 == 0) {
+            print_progress((double)i/(tt));
+        }
+    }
+    clock_t end = clock();
+    double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
+    printf("Time: %.6f seconds\n", elapsed);
+}
+
+void benchmark_openssl() {
+    byte key[] = {0x2b ,0x7e ,0x15 ,0x16 ,0x28 ,0xae ,0xd2 ,0xa6 ,0xab ,0xf7 ,0x15 ,0x88 ,0x09 ,0xcf ,0x4f ,0x3c};
+    byte plain[] = {0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34};
+    byte out[16];
+
+    int tt = 1000*1000*100; 
+    clock_t start = clock();
+    for(int i = 0; i < tt; i++) {
+        AES_KEY enc_key;
+        AES_set_encrypt_key(key, 128, &enc_key);   // 128-bit key
+        AES_encrypt(plain, out, &enc_key);
+
+        if(i % 1000*1000 == 0) {
+            print_progress((double)i/(tt));
+        }
+    }
+    clock_t end = clock();
+    double elapsed = (double)(end - start) / CLOCKS_PER_SEC;
+    printf("Time: %.6f seconds\n", elapsed);
+}
+
 int main(int argc, char const *argv[])
 {
     byte key[] = {0x2b ,0x7e ,0x15 ,0x16 ,0x28 ,0xae ,0xd2 ,0xa6 ,0xab ,0xf7 ,0x15 ,0x88 ,0x09 ,0xcf ,0x4f ,0x3c};
-    byte inp[] = {0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34};
-    byte exp[] = {0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32};
+    byte plain[] = {0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34};
+    byte cipher[] = {0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32};
     byte out[16];
 
-    aes_128_enc(key, inp, out);
+    aes_128_enc(key, plain, out);
 
-    if(memcmp(out, exp, 16) != 0) {
-        printf("compare falied\n");
+    if(memcmp(out, cipher, 16) != 0) {
+        printf("encrypt falied\n");
         print_bytes(out, 16);
-        print_bytes(exp, 16);
+        print_bytes(cipher, 16);
     }
     else {
-        printf("[AES][128] test pass\n");
+        printf("[AES][128] test encrypt pass\n");
     }
 
+    aes_128_dec(key, cipher, out);
+    if(memcmp(out, plain, 16) != 0) {
+        printf("decrypt falied\n");
+        print_bytes(out, 16);
+        print_bytes(plain, 16);
+    }
+    else {
+        printf("[AES][128] test decrypt pass\n");
+    }
+
+    byte plain2[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
+    byte cipher2[] = {0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30, 0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a};
+    byte key2[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+    aes_128_dec(key2, cipher2, out);
+    if(memcmp(out, plain2, 16) != 0) {
+        printf("decrypt falied\n");
+        print_bytes(out, 16);
+        print_bytes(plain, 16);
+    }
+    else {
+        printf("[AES][128] test decrypt 2 pass\n");
+    }
+
+    // benmark();
+
+    benchmark_openssl();
 
     return 0;
 }
